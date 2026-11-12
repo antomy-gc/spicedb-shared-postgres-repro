@@ -1,0 +1,77 @@
+services:
+  postgres:
+    image: "postgres:16"
+    environment:
+      POSTGRES_USER: "spicedb"
+      POSTGRES_PASSWORD: "spicedb"
+      POSTGRES_DB: "spicedb"
+    command: ["postgres", "-c", "max_connections=200", "-c", "track_commit_timestamp=on"]
+    ports:
+      - "5435:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U spicedb -d spicedb"]
+      interval: "2s"
+      timeout: "5s"
+      retries: 30
+
+  migrate:
+    image: "authzed/spicedb:v1.56.1"
+    command: "datastore migrate head"
+    environment:
+      SPICEDB_DATASTORE_ENGINE: "postgres"
+      SPICEDB_DATASTORE_CONN_URI: "postgres://spicedb:spicedb@postgres:5432/spicedb?sslmode=disable"
+    depends_on:
+      postgres:
+        condition: "service_healthy"
+
+  spicedb-1:
+    image: "authzed/spicedb:v1.56.1"
+    command: "serve"
+    environment: &spicedb-env
+      SPICEDB_LOG_FORMAT: "console"
+      SPICEDB_LOG_LEVEL: "warn"
+      SPICEDB_GRPC_PRESHARED_KEY: "repro"
+      SPICEDB_DATASTORE_ENGINE: "postgres"
+      SPICEDB_DATASTORE_CONN_URI: "postgres://spicedb:spicedb@postgres:5432/spicedb?sslmode=disable"
+      SPICEDB_DISPATCH_CLUSTER_ENABLED: "true"
+      SPICEDB_TELEMETRY_ENDPOINT: ""
+      SPICEDB_DISPATCH_UPSTREAM_ADDR: "dns:///spicedb:50053"
+    networks:
+      default:
+        aliases: ["spicedb"]
+    ports:
+      - "50061:50051"
+      - "9091:9090"
+    depends_on:
+      migrate:
+        condition: "service_completed_successfully"
+    healthcheck: &spicedb-health
+      test: ["CMD", "/usr/local/bin/grpc_health_probe", "-addr=localhost:50051"]
+      interval: "2s"
+      timeout: "5s"
+      retries: 30
+
+  spicedb-2:
+    image: "authzed/spicedb:v1.56.1"
+    command: "serve"
+    environment: *spicedb-env
+    networks:
+      default:
+        aliases: ["spicedb"]
+    ports:
+      - "50062:50051"
+      - "9092:9090"
+    depends_on:
+      migrate:
+        condition: "service_completed_successfully"
+    healthcheck: *spicedb-health
+
+  noise:
+    image: "postgres:16"
+    profiles: ["noise"]
+    environment:
+      PGPASSWORD: "spicedb"
+    command: ["pgbench", "-h", "postgres", "-U", "spicedb", "-c", "8", "-j", "4", "-T", "100000", "-R", "650", "noise"]
+    depends_on:
+      postgres:
+        condition: "service_healthy"

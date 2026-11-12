@@ -1,0 +1,13 @@
+definition user {}
+
+definition group {
+    relation member: user | group#member
+    permission membership = member
+}
+
+definition resource {
+    relation admin: user | group#member
+    relation viewer: user | group#member
+    permission view = viewer + admin
+    permission edit = admin
+}
