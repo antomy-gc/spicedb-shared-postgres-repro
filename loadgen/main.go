@@ -21,8 +21,8 @@ import (
 )
 
 const (
-	users      = 600
-	groups     = 60
+	users     = 600
+	groups    = 60
 	resources = 2000
 )
 
@@ -107,6 +107,7 @@ func run(ctx context.Context, cfg config, clients []*authzed.Client) error {
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	var writes, writeErrs atomic.Int64
 	if cfg.writeInterval > 0 {
 		go func() {
 			t := time.NewTicker(cfg.writeInterval)
@@ -116,9 +117,16 @@ func run(ctx context.Context, cfg config, clients []*authzed.Client) error {
 				case <-ctx.Done():
 					return
 				case <-t.C:
-					if err := writeOne(ctx, clients[rand.Intn(len(clients))], lw); err != nil && ctx.Err() == nil {
-						log.Printf("write: %v", err)
-					}
+					go func() {
+						if err := writeOne(ctx, clients[rand.Intn(len(clients))], lw); err != nil {
+							if ctx.Err() == nil {
+								writeErrs.Add(1)
+								log.Printf("write: %v", err)
+							}
+							return
+						}
+						writes.Add(1)
+					}()
 				}
 			}
 		}()
@@ -186,8 +194,8 @@ func run(ctx context.Context, cfg config, clients []*authzed.Client) error {
 		}
 		return latencies[int(float64(len(latencies)-1)*p)]
 	}
-	fmt.Fprintf(os.Stdout, "mode=%s rate=%d/s bulk=%d zipf=%s calls=%d errors=%d p50=%s p99=%s\n",
-		cfg.mode, cfg.rate, cfg.bulk, flag.Lookup("zipf").Value, len(latencies), errs.Load(), pct(0.5), pct(0.99))
+	fmt.Fprintf(os.Stdout, "mode=%s rate=%d/s bulk=%d zipf=%s calls=%d errors=%d p50=%s p99=%s writes=%d write-errors=%d\n",
+		cfg.mode, cfg.rate, cfg.bulk, flag.Lookup("zipf").Value, len(latencies), errs.Load(), pct(0.5), pct(0.99), writes.Load(), writeErrs.Load())
 	report(os.Stdout, before, after, cfg.duration)
 	return nil
 }

@@ -1,0 +1,15 @@
+services:
+  migrate:
+    image: "${SPICEDB_IMAGE}"
+  spicedb-1:
+    image: "${SPICEDB_IMAGE}"
+    environment:
+      SPICEDB_DATASTORE_EXPERIMENTAL_STABLE_HEAD_REVISION: "${STABLE_HEAD_REVISION:-false}"
+    healthcheck:
+      test: ["CMD", "/bin/grpc_health_probe", "-addr=localhost:50051"]
+  spicedb-2:
+    image: "${SPICEDB_IMAGE}"
+    environment:
+      SPICEDB_DATASTORE_EXPERIMENTAL_STABLE_HEAD_REVISION: "${STABLE_HEAD_REVISION:-false}"
+    healthcheck:
+      test: ["CMD", "/bin/grpc_health_probe", "-addr=localhost:50051"]
